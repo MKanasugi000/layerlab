@@ -1,0 +1,53 @@
+appId: jp.mildsolt.layerlab
+productName: LayerLab
+copyright: © 2026 mildsolt
+
+directories:
+  output: release
+  buildResources: build
+
+# DL→.tmp展開→rename 工程で Windows Defender がロックし EPERM になるのを回避。
+# 既にインストール済みのローカル electron バイナリを直接使う。
+electronDist: node_modules/electron/dist
+
+# 本番に必要なものだけ同梱（ソース/リサーチ/設定は除外して軽量化）
+files:
+  - "**/*"
+  - "!src/**"
+  - "!electron/**"
+  - "!research/**"
+  - "!**/*.map"
+  - "!**/*.md"
+  - "!build/*.png"
+  - "!build/make_icon.py"
+  - "!tsconfig*.json"
+  - "!vite.config.ts"
+  - "!*.bat"
+  - "!*.lnk"
+  # 🔥 ビルド成果物を asar に再帰同梱しない（肥大の主因＝前回の release/dist-share/zip/exe を巻き込んでいた）。
+  # ⚠ *.exe / *.zip はルート直下しか除外しない。dist-trial/ 配下のネスト exe(70MB) がすり抜け
+  #    app.asar を 12MB→82MB に肥大させた（2026-07-06 実測）。**/*.exe と dist-trial/** を必ず除外。
+  - "!release/**"
+  - "!dist-share/**"
+  - "!dist-trial/**"
+  - "!*.zip"
+  - "!*.exe"
+  - "!**/*.exe"
+  - "!**/*.zip"
+  - "!node_modules/ag-psd/.v8-cache/**"
+
+asar: true
+# font-list の VBS フォールバックは asar 内パスから実行できないため展開しておく
+# （Win10+ の主経路はインライン PowerShell なので通常は不要だが保険）
+asarUnpack:
+  - "node_modules/font-list/**"
+
+win:
+  target:
+    - portable
+  icon: build/icon.ico
+
+portable:
+  artifactName: LayerLab-${version}-portable.exe
+  # 一時展開先を固定し、二重起動時の競合を避ける
+  unicode: true

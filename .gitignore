@@ -1,0 +1,28 @@
+node_modules/
+dist/
+dist-electron/
+release/
+dist-trial/
+*.log
+.vite/
+.DS_Store
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.vercel/
+coverage/
+AGENTS.md
+GUMROAD_LISTING_EN.md
+
+# 配布物（バイナリ肥大化を避けるため除外）
+dist-share/
+*.zip
+*.exe
+
+# ユーザーが編集する制作データ
+*.llab
+*.psd
+*.psb
