@@ -320,7 +320,8 @@ export function MenuBar(props: MenuBarProps) {
           label: { ja: 'レイヤーを統合', en: 'Merge Layers' },
           shortcut: 'Ctrl+E',
           onClick: () => mergeSelectedLayers(),
-          disabled: s.selectedIds.length < 2,
+          disabled: s.selectedIds.length < 2
+            && !s.layers.some((layer) => layer.type === 'group' && s.selectedIds.includes(layer.id)),
         },
         {
           label: { ja: 'クリッピングマスク作成/解除', en: 'Create/Release Clipping Mask' },

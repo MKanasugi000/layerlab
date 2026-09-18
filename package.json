@@ -17,7 +17,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "test": "node scripts/test-interactions.mjs",
+    "test": "node scripts/test-interactions.mjs && node scripts/test-editor-store.mjs && node scripts/test-merge.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

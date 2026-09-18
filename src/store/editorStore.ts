@@ -5,6 +5,7 @@ import { temporal } from 'zundo';
 import { t } from '../i18n/locale';
 import { DEFAULT_TEXT_FONT } from '../fonts/catalog';
 import { validatePixelSize } from '../utils/canvasLimits';
+import { fittedImageBounds } from '../interactions/canvasFit';
 import {
   editorHistoryEqual,
   historyStackMoved,
@@ -200,7 +201,7 @@ interface EditorState {
   duplicateLayers: (ids: LayerId[], offset?: { x: number; y: number }) => void;
   /** そのレイヤーだけ表示（他を一時非表示）⇄ 全表示 のトグル（Alt+クリック）。 */
   soloLayer: (id: LayerId) => void;
-  mergeLayers: (removeIds: LayerId[], src: string, width: number, height: number, name: string) => void;
+  mergeLayers: (removeIds: LayerId[], src: string, width: number, height: number, name: string) => boolean;
   nudgeLayer: (id: LayerId, dx: number, dy: number) => void;
   nudgeLayers: (ids: LayerId[], dx: number, dy: number) => void;
   clearLayers: () => void;
@@ -604,7 +605,8 @@ export function createDocumentStore(
       // 選択レイヤー群を焼き込んだ1枚の画像レイヤーで置き換える（レイヤー統合）。
       // ラスタライズ(Konva stage→PNG)は DOM 依存のため utils/layerActions 側で行い、
       // ここでは配列手術だけを1つの set() で完結させて undo を1手にまとめる。
-      mergeLayers: (removeIds, src, width, height, name) =>
+      mergeLayers: (removeIds, src, width, height, name) => {
+        let mergedSuccessfully = false;
         set((s) => {
           const removeSet = new Set(removeIds);
           if (layerBlocksContainLock(s.layers as Layer[], [...removeSet])) return;
@@ -638,7 +640,10 @@ export function createDocumentStore(
           s.selectedId = merged.id;
           s.selectedIds = [merged.id];
           s.dirty = true;
-        }),
+          mergedSuccessfully = true;
+        });
+        return mergedSuccessfully;
+      },
 
       nudgeLayer: (id, dx, dy) =>
         set((s) => {
@@ -720,23 +725,18 @@ export function createDocumentStore(
         set((s) => {
           const layer = s.layers.find((x) => x.id === id);
           if (!layer || layer.type !== 'image') return;
-          const w = Math.round(layer.naturalWidth * (layer.scaleX || 1));
-          const h = Math.round(layer.naturalHeight * (layer.scaleY || 1));
-          const size = validatePixelSize(w, h);
-          if (!size.ok) return;
-          // カンバスを画像の表示サイズに合わせ、その画像を原点に揃える
-          const dx = layer.x;
-          const dy = layer.y;
-          s.canvas.width = size.width;
-          s.canvas.height = size.height;
-          layer.x = 0;
-          layer.y = 0;
-          // 他レイヤーも同じだけ平行移動して相対位置を保つ
+          const bounds = fittedImageBounds(layer);
+          if (!bounds) return;
+          s.canvas.width = bounds.width;
+          s.canvas.height = bounds.height;
+          // Shift the entire document coordinate system, preserving transforms
+          // and relative artwork/guide positions, including flipped images.
           s.layers.forEach((other) => {
-            if (other.id !== id) {
-              other.x -= dx;
-              other.y -= dy;
-            }
+            other.x -= bounds.x;
+            other.y -= bounds.y;
+          });
+          s.guides.forEach((guide) => {
+            guide.pos -= guide.axis === 'v' ? bounds.x : bounds.y;
           });
           s.viewport.autoFit = true;
           s.dirty = true;
@@ -1159,14 +1159,16 @@ export function createDocumentStore(
 
       addGuide: (axis, pos) =>
         set((s) => {
+          if (!Number.isFinite(pos)) return;
           s.guides.push({ id: crypto.randomUUID(), axis, pos: Math.round(pos) });
           s.dirty = true;
         }),
 
       updateGuide: (id, pos) =>
         set((s) => {
+          if (!Number.isFinite(pos)) return;
           const g = s.guides.find((x) => x.id === id);
-          if (g) {
+          if (g && g.pos !== Math.round(pos)) {
             g.pos = Math.round(pos);
             s.dirty = true;
           }
@@ -1174,12 +1176,14 @@ export function createDocumentStore(
 
       removeGuide: (id) =>
         set((s) => {
+          if (!s.guides.some((g) => g.id === id)) return;
           s.guides = s.guides.filter((x) => x.id !== id);
           s.dirty = true;
         }),
 
       clearGuides: () =>
         set((s) => {
+          if (s.guides.length === 0) return;
           s.guides = [];
           s.dirty = true;
         }),
@@ -1219,6 +1223,7 @@ export function createDocumentStore(
         canvas: state.canvas,
         layers: state.layers,
         selection: state.selection,
+        guides: state.guides,
       }),
       // Layer focus is workspace UI state, not a document edit.  Keeping it out
       // of history prevents ordinary row clicks from evicting real edits and

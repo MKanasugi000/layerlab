@@ -91,18 +91,20 @@ export function rasterizeLayers(keepIds: string[]): HTMLCanvasElement | null {
     hide(stage.findOne('#' + lyr.id));
   }
 
-  const c = stage.toCanvas({
-    x: 0,
-    y: 0,
-    width: width * sc,
-    height: height * sc,
-    pixelRatio: 1 / sc,
-  }) as HTMLCanvasElement;
-
-  // 元の可視状態へ復元
-  for (const { node, prev } of hiddenNodes) node.visible(prev);
-  stage.batchDraw();
-  return c;
+  try {
+    return stage.toCanvas({
+      x: 0,
+      y: 0,
+      width: width * sc,
+      height: height * sc,
+      pixelRatio: 1 / sc,
+    }) as HTMLCanvasElement;
+  } finally {
+    // toCanvas can throw (e.g. an allocation or tainted-image failure). Never
+    // leave the editor with unrelated layers hidden in that case.
+    for (const { node, prev } of hiddenNodes) node.visible(prev);
+    stage.batchDraw();
+  }
 }
 
 /** 選択範囲をキャンバス全面のアルファマスク(白=選択)へ焼く。 */

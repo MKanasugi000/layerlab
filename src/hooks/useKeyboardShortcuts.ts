@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { useEditorStore, undo, redo, workspaceStore } from '../store/editorStore';
+import { useEditorStore, getActiveStore, undo, redo, workspaceStore } from '../store/editorStore';
+import { createTemporaryHandController } from '../interactions/temporaryHand';
 import { saveCurrent, saveCurrentAs, openProject } from '../utils/projectIo';
 import { pasteFromClipboard } from '../utils/clipboardPaste';
 import {
@@ -66,11 +67,8 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
-  // Space = 一時ハンド（押している間だけパン、離すと元ツールへ戻る／Photoshop互換）
-  const spaceActiveRef = useRef(false);
-  const prevToolRef = useRef<Tool>('move');
-
   useEffect(() => {
+    const temporaryHand = createTemporaryHandController();
     const onKeyDown = (e: KeyboardEvent) => {
       let editable = isEditable(e.target);
       const startedEditable = editable;
@@ -248,7 +246,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
       // Ctrl+E = 選択中の複数レイヤーを統合（Photoshop「レイヤーを結合」）
       if (ctrl && key === 'e' && !e.shiftKey && !e.altKey && !editable) {
         e.preventDefault();
-        if (state.selectedIds.length >= 2) mergeSelectedLayers();
+        if (state.selectedIds.length > 0) mergeSelectedLayers();
         return;
       }
       if (ctrl && key === 't' && !editable) {
@@ -378,11 +376,7 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
       // Space = 一時ハンド（押下中だけパン）
       if (e.code === 'Space') {
         e.preventDefault();
-        if (!spaceActiveRef.current && state.tool !== 'hand') {
-          prevToolRef.current = state.tool;
-          spaceActiveRef.current = true;
-          state.setTool('hand');
-        }
+        if (!e.repeat) temporaryHand.begin(getActiveStore());
         return;
       }
 
@@ -488,17 +482,21 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers = {}) {
 
     const onKeyUp = (e: KeyboardEvent) => {
       // Space を離したら一時ハンドを解除して元ツールへ
-      if (e.code === 'Space' && spaceActiveRef.current) {
-        spaceActiveRef.current = false;
-        useEditorStore.getState().setTool(prevToolRef.current);
-      }
+      if (e.code === 'Space') temporaryHand.release();
     };
 
+    const unsubscribeWorkspace = workspaceStore.subscribe((next, previous) => {
+      if (next.activeId !== previous.activeId) temporaryHand.release();
+    });
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', temporaryHand.release);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', temporaryHand.release);
+      unsubscribeWorkspace();
+      temporaryHand.release();
     };
   }, []);
 }

@@ -2105,23 +2105,27 @@ export function Canvas({ adjustmentSessionOpen = false }: { adjustmentSessionOpe
                 g.axis === 'v' ? (
                   <Line
                     key={`ug-${g.id}`}
-                    points={[g.pos, 0, g.pos, canvas.height]}
+                    x={g.pos}
+                    y={0}
+                    points={[0, 0, 0, canvas.height]}
                     stroke="#00bcd4"
                     strokeWidth={1 / viewport.scale}
                     listening={moveActive}
                     draggable={moveActive}
                     hitStrokeWidth={Math.max(8 / viewport.scale, 4)}
                     onDragMove={(e) => {
+                      e.cancelBubble = true;
                       const node = e.target;
                       node.y(0);
-                      updateGuide(g.id, node.x());
                     }}
                     onDragEnd={(e) => {
+                      e.cancelBubble = true;
                       const node = e.target;
                       const newPos = node.x();
                       if (newPos < -10 || newPos > canvas.width + 10) {
                         removeGuide(g.id);
                       } else {
+                        node.x(Math.round(newPos));
                         updateGuide(g.id, newPos);
                       }
                       node.y(0);
@@ -2130,23 +2134,27 @@ export function Canvas({ adjustmentSessionOpen = false }: { adjustmentSessionOpe
                 ) : (
                   <Line
                     key={`ug-${g.id}`}
-                    points={[0, g.pos, canvas.width, g.pos]}
+                    x={0}
+                    y={g.pos}
+                    points={[0, 0, canvas.width, 0]}
                     stroke="#00bcd4"
                     strokeWidth={1 / viewport.scale}
                     listening={moveActive}
                     draggable={moveActive}
                     hitStrokeWidth={Math.max(8 / viewport.scale, 4)}
                     onDragMove={(e) => {
+                      e.cancelBubble = true;
                       const node = e.target;
                       node.x(0);
-                      updateGuide(g.id, node.y());
                     }}
                     onDragEnd={(e) => {
+                      e.cancelBubble = true;
                       const node = e.target;
                       const newPos = node.y();
                       if (newPos < -10 || newPos > canvas.height + 10) {
                         removeGuide(g.id);
                       } else {
+                        node.y(Math.round(newPos));
                         updateGuide(g.id, newPos);
                       }
                       node.x(0);

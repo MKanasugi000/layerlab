@@ -2,6 +2,7 @@ interface EditorHistorySnapshot {
   canvas: unknown;
   layers: unknown;
   selection: unknown;
+  guides: unknown;
 }
 
 /**
@@ -17,7 +18,8 @@ export function editorHistoryEqual(
   // would duplicate entire PSDs on every history comparison.
   return previous.canvas === next.canvas
     && previous.layers === next.layers
-    && previous.selection === next.selection;
+    && previous.selection === next.selection
+    && previous.guides === next.guides;
 }
 
 export function historyStackMoved(beforeLength: number, afterLength: number): boolean {

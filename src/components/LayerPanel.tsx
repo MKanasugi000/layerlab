@@ -326,7 +326,7 @@ export function LayerPanel() {
     // 右クリック対象が現在の複数選択に含まれている場合のみ成立（含まれないと
     // 上の selectLayer で単一選択に戻るため、Photoshop と同じ挙動になる）。
     const isMultiSelection = selectedIds.includes(l.id) && selectedIds.length >= 2;
-    if (isMultiSelection) {
+    if (isMultiSelection || l.type === 'group') {
       items.push({
         label: t({ ja: 'レイヤーを統合', en: 'Merge Layers' }),
         shortcut: 'Ctrl+E',

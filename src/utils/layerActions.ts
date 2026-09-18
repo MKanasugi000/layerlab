@@ -1,8 +1,9 @@
-import { useEditorStore, undo, createImageLayer } from '../store/editorStore';
+import { useEditorStore, undo, createImageLayer, getActiveStore } from '../store/editorStore';
 import { toast } from '../store/toastStore';
 import { t } from '../i18n/locale';
 import { rasterizeLayers } from './selectionOps';
 import { layerBlocksContainLock } from '../interactions/layerLockPolicy';
+import { planSafeMerge, type MergeRejection } from '../interactions/mergePolicy';
 
 function commandContainsLockedLayer(
   layers: ReturnType<typeof useEditorStore.getState>['layers'],
@@ -106,58 +107,80 @@ export function deleteSelectedLayers(preferredId?: string) {
  * Undo付きトーストを出す。選択にグループが含まれる場合はその子孫レイヤーも統合対象に含める。
  */
 export function mergeSelectedLayers() {
-  const st = useEditorStore.getState();
-  const selIds = st.selectedIds;
-  if (selIds.length < 2) {
-    toast(t({ ja: '2枚以上のレイヤーを選択してください', en: 'Select 2 or more layers to merge' }), {
-      kind: 'info',
-    });
+  // Keep the command attached to the document where it was invoked.
+  const owner = getActiveStore();
+  const st = owner.getState();
+  const plan = planSafeMerge(st.layers, st.selectedIds);
+  if (!plan.ok) {
+    mergeRejectedToast(plan.reason);
     return;
   }
-
-  // 統合対象 = 選択レイヤー ＋ （選択されたグループの子孫）
-  const removeSet = new Set(selIds);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const l of st.layers) {
-      if (!removeSet.has(l.id) && l.parentId && removeSet.has(l.parentId)) {
-        removeSet.add(l.id);
-        changed = true;
-      }
-    }
-  }
-  if (commandContainsLockedLayer(st.layers, [...removeSet])) {
+  if (commandContainsLockedLayer(st.layers, plan.removeIds)) {
     lockedCommandToast();
     return;
   }
 
-  // 実際に描画されるのはグループ以外（グループは箱なのでピクセルを持たない）
-  const renderIds = [...removeSet].filter((id) => {
-    const l = st.layers.find((x) => x.id === id);
-    return l != null && l.type !== 'group';
-  });
-  if (renderIds.length === 0) {
-    toast(t({ ja: '統合できるレイヤーがありません', en: 'No layers to merge' }), { kind: 'info' });
-    return;
-  }
-
-  const canvas = rasterizeLayers(renderIds);
-  if (!canvas) {
+  let src: string;
+  try {
+    const canvas = rasterizeLayers(plan.renderIds);
+    if (!canvas) throw new Error('No rendered canvas');
+    src = canvas.toDataURL('image/png');
+  } catch {
+    // rasterizeLayers also restores Konva visibility in its finally block.
     toast(t({ ja: 'レイヤーの統合に失敗しました', en: 'Failed to merge layers' }), { kind: 'error' });
     return;
   }
   const { width, height } = st.canvas;
-  const src = canvas.toDataURL('image/png');
 
   // 統合レイヤー名 = 最前面(配列先頭寄り)の選択レイヤー名（Photoshop準拠）
   const frontIdx = Math.min(
-    ...selIds.map((id) => st.layers.findIndex((l) => l.id === id)).filter((i) => i >= 0),
+    ...plan.rootIds.map((id) => st.layers.findIndex((l) => l.id === id)).filter((i) => i >= 0),
   );
   const name = st.layers[frontIdx]?.name ?? t({ ja: '統合レイヤー', en: 'Merged' });
 
-  st.mergeLayers([...removeSet], src, width, height, name);
+  if (!st.mergeLayers(plan.removeIds, src, width, height, name)) {
+    toast(t({ ja: 'レイヤーの統合に失敗しました', en: 'Failed to merge layers' }), { kind: 'error' });
+    return;
+  }
   toast(t({ ja: 'レイヤーを統合しました', en: 'Merged layers' }), {
     action: { label: t({ ja: '元に戻す', en: 'Undo' }), run: () => undo() },
   });
+}
+
+function mergeRejectedToast(reason: MergeRejection): void {
+  const messages: Record<MergeRejection, { ja: string; en: string }> = {
+    'not-enough-layers': {
+      ja: '統合するには、同じ階層の表示中レイヤーを2枚以上選択してください',
+      en: 'Select at least two visible sibling layers to merge',
+    },
+    'mixed-parents': {
+      ja: '同じグループ内のレイヤーだけを統合してください',
+      en: 'Merge only layers in the same group',
+    },
+    'non-contiguous': {
+      ja: '連続した兄弟レイヤーを選択してください',
+      en: 'Select one contiguous block of sibling layers',
+    },
+    hidden: {
+      ja: '非表示の選択レイヤーまたはグループ内容を表示してから統合してください',
+      en: 'Show every selected layer and group member before merging',
+    },
+    'ancestor-state': {
+      ja: '半透明または非表示の親グループ内では統合できません。グループ全体を選択するか、親を表示して不透明度を100%にしてください',
+      en: 'Cannot merge inside a translucent or hidden group. Select the whole group, or make its parent visible and fully opaque',
+    },
+    'blend-mode': {
+      ja: '描画モードが「通常」のレイヤーだけを統合できます',
+      en: 'Only Normal (source-over) layers can be merged',
+    },
+    clipping: {
+      ja: 'クリッピング関係を保つため、クリップしたレイヤーとベースを両方選択するかクリッピングを解除してください',
+      en: 'To preserve clipping, select both the clipped layer and its base, or release clipping first',
+    },
+    'invalid-tree': {
+      ja: 'グループ構造を確認してから統合してください',
+      en: 'Check the group structure before merging',
+    },
+  };
+  toast(t(messages[reason]), { kind: 'info' });
 }
